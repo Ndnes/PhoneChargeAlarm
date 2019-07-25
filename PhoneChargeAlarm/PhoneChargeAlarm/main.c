@@ -146,10 +146,12 @@ int main(void)
 			ms_1000_counter = 0;
 		}
 		
-		if (ms_500_counter == 0)
+		static uint16_t ms_500_counter_old = 1;
+		if ((ms_500_counter == 0) && (ms_500_counter_old != 0))
 		{
 			adc_done = false;		//Ensures ADC conversion will happen aprox every 500ms.
 		}
+		ms_500_counter_old = ms_500_counter;
 
 
 		if (!adc_done)
