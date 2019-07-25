@@ -39,6 +39,7 @@
 #define LED_off				TCCR0A |= (1<<COM0A1)	//the LED should be turned on and off by
 #define LED_toggle			TCCR0A ^= (1<<COM0A1)	//connecting/disconnecting OC0A to the port.
 
+#define phone_on_pad		(PINB & (1<<PINB1))
 
  /****************************************
  Library import
@@ -85,6 +86,7 @@ void (*state)(); //Function pointer
 /****************************************
 Function prototypes
 ****************************************/
+uint16_t get_voltage();
 void startup();
 void carOn_phoneOff();
 void carOn_phoneOn();
@@ -97,7 +99,6 @@ static volatile uint16_t cycle_timer_top = 15000;
 volatile uint16_t cycle_timer = 0;
 volatile bool adc_done = false;
 
-bool Phone_on_pad = false; //
 
 int main(void)
 {
@@ -133,11 +134,35 @@ ISR(TIM0_OVF_vect)
 }
 
 /*****************************************
+Functions
+*****************************************/
+uint16_t get_voltage()
+{
+	return ADC_value * 64; //Returns the voltage value in mV.
+}
+
+
+/*****************************************
 State functions
 *****************************************/
 void startup()
 {
-	state = carOn_phoneOff;
+	bool blink_finished = false;
+	//TODO: blink function.
+	
+	uint16_t voltage = get_voltage();
+	if (blink_finished && !phone_on_pad)
+	{
+		state = carOn_phoneOff;
+	}
+	else if (phone_on_pad)
+	{
+		state = carOn_phoneOn;
+	}
+	else if (voltage < 14000)
+	{
+		state = carOff_phoneOff;
+	}
 }
 void carOn_phoneOff()
 {
