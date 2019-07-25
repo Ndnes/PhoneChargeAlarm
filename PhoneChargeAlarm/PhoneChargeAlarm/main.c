@@ -94,7 +94,7 @@ void carOn_phoneOn();
 void carOff_phoneOn();
 void carOff_phoneOff();
 bool slow_blink(uint8_t num_of_blinks);
-bool fast_blink(uint8_t num_of_blinks);
+void fast_blink(uint8_t num_of_blinks);
 
 
 static volatile uint16_t cycle_timer_top = 15000;
@@ -104,7 +104,7 @@ static uint16_t voltage_limit_high = 14600;
 static uint16_t voltage_limit_low = 14300;
 uint16_t voltage = 0;
 
-uint8_t ms_10_counter = 0;
+uint8_t ms_50_counter = 0;
 uint16_t ms_500_counter = 0;
 uint16_t ms_1000_counter = 0;
 
@@ -127,15 +127,15 @@ int main(void)
 
 		if (old_cycle_timer != cycle_timer)
 		{
-			ms_10_counter ++;
+			ms_50_counter ++;
 			ms_500_counter ++;
 			ms_1000_counter ++;
 		}
 		old_cycle_timer = cycle_timer;
 
-		if (ms_10_counter > 9)
+		if (ms_50_counter > 9)
 		{
-			ms_10_counter = 0;
+			ms_50_counter = 0;
 		}
 		if (ms_500_counter > 499)
 		{
@@ -183,40 +183,37 @@ uint16_t get_voltage()
 bool slow_blink(uint8_t num_of_blinks)
 {
 	static uint8_t blinks = 0;
-	
-	if (ms_1000_counter == 0)
+	static uint16_t ms_1000_counter_old = 1;
+
+	if ((ms_1000_counter == 0) && (ms_1000_counter_old != 0))
 	{
 		LED_toggle;
 		blinks ++;
 	}
+	ms_1000_counter_old = ms_1000_counter;
 
 	if (blinks >= (num_of_blinks * 2))
 	{
 		return true;
+		blinks = 0;
 	}
 	else
 	{
 		return false;
 	}
 }
-bool fast_blink(uint8_t num_of_blinks)
+void fast_blink(uint8_t num_of_blinks)
 {
 	static uint8_t blinks = 0;
+	static uint8_t ms_50_counter_old = 1;
 
-	if (ms_10_counter == 0)
+	if ((ms_50_counter == 0) && (ms_50_counter_old != 0))
 	{
 		LED_toggle;
 		blinks ++;
 	}
-
-	if (blinks >= (num_of_blinks * 2))
-	{
-		return true;
-	}
-	else
-	{
-		return false;
-	}
+	ms_50_counter_old = ms_50_counter;
+	//TODO: Finish this function.
 }
 
 /*****************************************
@@ -224,7 +221,11 @@ State functions
 *****************************************/
 void startup()
 {
-	bool blink_finished = slow_blink(2);
+	static bool blink_finished = false;
+	if (!blink_finished)
+	{
+		blink_finished = slow_blink(2);
+	}
 
 	if (blink_finished && !phone_on_pad)
 	{
@@ -272,7 +273,7 @@ void carOff_phoneOn()
 		state = carOn_phoneOn;
 	}
 
-	//TODO: Do blinking until power loss.
+	fast_blink(8);
 }
 void carOff_phoneOff()
 {
