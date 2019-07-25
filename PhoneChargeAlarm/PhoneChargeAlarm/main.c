@@ -35,6 +35,7 @@
 
 #define ADC_value			ADCL
 
+#define LED_brightness		0xFF					//The brightness of the LED from 0 to 255.
 #define LED_on				TCCR0A &= ~(1<<COM0A1)	//The brightness of the LED is controlled with PWM so
 #define LED_off				TCCR0A |= (1<<COM0A1)	//the LED should be turned on and off by
 #define LED_toggle			TCCR0A ^= (1<<COM0A1)	//connecting/disconnecting OC0A to the port.
@@ -75,7 +76,7 @@ void Timer_init(void)
 	TCCR0A |= (1<<WGM00);			//-
 	TCCR0B |= (1<<WGM02);			//Sets up the timer for 8 bit fast PWM mode.
 
-	OCR0AL = 0xFF;					//Write 255 to the low byte of OCR0A register. (2byte register)
+	OCR0AL = LED_brightness;		//Write the compare value to set LED brightness (0-255)
 
 	TIMSK0 |= (1<<TOIE0);			//Enable overflow interrupt for tcnt0.
 }
@@ -92,12 +93,22 @@ void carOn_phoneOff();
 void carOn_phoneOn();
 void carOff_phoneOn();
 void carOff_phoneOff();
+bool slow_blink(uint8_t num_of_blinks);
+bool fast_blink(uint8_t num_of_blinks);
 
 
-static volatile uint8_t LED_brightness = 0xFF; // Set duty cycle for LED light from 0 to 255.
 static volatile uint16_t cycle_timer_top = 15000;
 volatile uint16_t cycle_timer = 0;
 volatile bool adc_done = false;
+static uint16_t voltage_limit_high = 14600;
+static uint16_t voltage_limit_low = 14300;
+uint16_t voltage = 0;
+
+uint8_t ms_10_counter = 0;
+uint16_t ms_500_counter = 0;
+uint16_t ms_1000_counter = 0;
+
+uint16_t old_cycle_timer = 0;
 
 
 int main(void)
@@ -113,23 +124,51 @@ int main(void)
 
     while (1)
     {
+
+		if (old_cycle_timer != cycle_timer)
+		{
+			ms_10_counter ++;
+			ms_500_counter ++;
+			ms_1000_counter ++;
+		}
+		old_cycle_timer = cycle_timer;
+
+		if (ms_10_counter > 9)
+		{
+			ms_10_counter = 0;
+		}
+		if (ms_500_counter > 499)
+		{
+			ms_500_counter = 0;
+		}
+		if (ms_1000_counter > 999)
+		{
+			ms_1000_counter = 0;
+		}
+		
+		if (ms_500_counter == 0)
+		{
+			adc_done = false;		//Ensures ADC conversion will happen aprox every 500ms.
+		}
+
+
 		if (!adc_done)
 		{
 			adc_done = true;
 			SMCR |= (1<<SM0);		//Do an ADC conversion in ADC noise canceling mode.
-		}							//CPU is halted while conversion is taking place
+									//CPU is halted while conversion is taking place
+			voltage = get_voltage();							
+		}
 		state();
     }
 }
 
 ISR(TIM0_OVF_vect)
 {
-	OCR0AL = LED_brightness;		//Write the compare value to set brightness (0-255)
 	cycle_timer ++;
 	if (cycle_timer > cycle_timer_top)
 	{
 		cycle_timer = 0;
-		adc_done = false;
 	}
 }
 
@@ -141,16 +180,52 @@ uint16_t get_voltage()
 	return ADC_value * 64; //Returns the voltage value in mV.
 }
 
+bool slow_blink(uint8_t num_of_blinks)
+{
+	static uint8_t blinks = 0;
+	
+	if (ms_1000_counter == 0)
+	{
+		LED_toggle;
+		blinks ++;
+	}
+
+	if (blinks >= (num_of_blinks * 2))
+	{
+		return true;
+	}
+	else
+	{
+		return false;
+	}
+}
+bool fast_blink(uint8_t num_of_blinks)
+{
+	static uint8_t blinks = 0;
+
+	if (ms_10_counter == 0)
+	{
+		LED_toggle;
+		blinks ++;
+	}
+
+	if (blinks >= (num_of_blinks * 2))
+	{
+		return true;
+	}
+	else
+	{
+		return false;
+	}
+}
 
 /*****************************************
 State functions
 *****************************************/
 void startup()
 {
-	bool blink_finished = false;
-	//TODO: blink function.
-	
-	uint16_t voltage = get_voltage();
+	bool blink_finished = slow_blink(2);
+
 	if (blink_finished && !phone_on_pad)
 	{
 		state = carOn_phoneOff;
@@ -159,24 +234,54 @@ void startup()
 	{
 		state = carOn_phoneOn;
 	}
-	else if (voltage < 14000)
+	else if (voltage < voltage_limit_low)
 	{
 		state = carOff_phoneOff;
 	}
 }
 void carOn_phoneOff()
 {
-	
+	if (phone_on_pad)
+	{
+		state = carOn_phoneOn;
+	}
+	else if (voltage < voltage_limit_low)
+	{
+		state = carOff_phoneOff;
+	}
 }
 void carOn_phoneOn()
 {
-	
+	if (!phone_on_pad)
+	{
+		state = carOn_phoneOff;
+	}
+	else if (voltage < voltage_limit_low)
+	{
+		state = carOff_phoneOn;
+	}
 }
 void carOff_phoneOn()
 {
-	
+	if(!phone_on_pad)
+	{
+		state = carOff_phoneOff;
+	}
+	else if (voltage > voltage_limit_high)
+	{
+		state = carOn_phoneOn;
+	}
+
+	//TODO: Do blinking until power loss.
 }
 void carOff_phoneOff()
 {
-
+	if (phone_on_pad)
+	{
+		state = carOff_phoneOn;
+	}
+	else if (voltage > voltage_limit_high)
+	{
+		state = carOn_phoneOff;
+	}
 }
