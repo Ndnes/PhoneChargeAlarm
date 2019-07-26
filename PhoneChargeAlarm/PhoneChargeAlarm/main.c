@@ -35,9 +35,9 @@
 
 #define ADC_value			ADCL
 
-#define LED_brightness		0xFF					//The brightness of the LED from 0 to 255.
-#define LED_on				TCCR0A &= ~(1<<COM0A1)	//The brightness of the LED is controlled with PWM so
-#define LED_off				TCCR0A |= (1<<COM0A1)	//the LED should be turned on and off by
+#define LED_brightness		0x14					//The brightness of the LED from 0 to 255.
+#define LED_on				TCCR0A |= (1<<COM0A1)	//The brightness of the LED is controlled with PWM so
+#define LED_off				TCCR0A &= ~(1<<COM0A1)	//the LED should be turned on and off by
 #define LED_toggle			TCCR0A ^= (1<<COM0A1)	//connecting/disconnecting OC0A to the port.
 
 #define phone_on_pad		(PINB & (1<<PINB1))
@@ -49,6 +49,10 @@
 #include <avr/io.h>
 #include <avr/interrupt.h>
 #include <stdbool.h>
+
+//FOR DEBUGGING ONLY
+//TODO: remove delay.h
+#include <util/delay.h>
 
 
 /****************************************
@@ -71,7 +75,7 @@ void ADC_init(void)
 }
 void Timer_init(void)
 {
-	TCCR0A |= (1<<COM0A1);			//Clear on compare match.***
+	//TCCR0A |= (1<<COM0A1);			//Clear on compare match.***
 	
 	TCCR0A |= (1<<WGM00);			//-
 	TCCR0B |= (1<<WGM02);			//Sets up the timer for 8 bit fast PWM mode.
@@ -97,8 +101,8 @@ bool slow_blink(uint8_t num_of_blinks);
 void fast_blink(uint8_t num_of_blinks);
 
 
-static volatile uint16_t cycle_timer_top = 15000;
-volatile uint16_t cycle_timer = 0;
+static volatile uint8_t cycle_timer_top = 32; //This value corresponds to the cycle timer overflowing approx every 1ms.
+volatile uint8_t cycle_timer = 0;
 volatile bool adc_done = false;
 static uint16_t voltage_limit_high = 14600;
 static uint16_t voltage_limit_low = 14300;
@@ -108,7 +112,7 @@ uint8_t ms_50_counter = 0;
 uint16_t ms_500_counter = 0;
 uint16_t ms_1000_counter = 0;
 
-uint16_t old_cycle_timer = 0;
+uint8_t old_cycle_timer = 0;
 
 
 int main(void)
@@ -125,7 +129,7 @@ int main(void)
     while (1)
     {
 
-		if (old_cycle_timer != cycle_timer)
+		if (cycle_timer == 31)
 		{
 			ms_50_counter ++;
 			ms_500_counter ++;
@@ -167,7 +171,7 @@ int main(void)
 
 ISR(TIM0_OVF_vect)
 {
-	cycle_timer ++;
+	cycle_timer = 30;
 	if (cycle_timer > cycle_timer_top)
 	{
 		cycle_timer = 0;
@@ -208,13 +212,29 @@ void fast_blink(uint8_t num_of_blinks)
 {
 	static uint8_t blinks = 0;
 	static uint8_t ms_50_counter_old = 1;
+	static uint16_t ms_1000_counter_old = 0;
+	static bool blink_pause = false;
 
-	if ((ms_50_counter == 0) && (ms_50_counter_old != 0))
+	if (!blink_pause)
 	{
-		LED_toggle;
-		blinks ++;
+		if ((ms_50_counter == 0) && (ms_50_counter_old != 0))
+		{
+			LED_toggle;
+			blinks ++;
+		}
+		ms_50_counter_old = ms_50_counter;
 	}
-	ms_50_counter_old = ms_50_counter;
+
+	if (blinks >= (num_of_blinks * 2))
+	{
+		blinks = 0;
+		blink_pause = true;
+		ms_1000_counter_old = ms_1000_counter - 1;
+	}
+	if (ms_1000_counter == ms_1000_counter_old)
+	{
+		blink_pause = false;
+	}
 	//TODO: Finish this function.
 }
 
@@ -226,19 +246,22 @@ void startup()
 	static bool blink_finished = false;
 	if (!blink_finished)
 	{
-		blink_finished = slow_blink(2);
+		blink_finished = slow_blink(3);
 	}
 
 	if (blink_finished && !phone_on_pad)
 	{
+		LED_off;
 		state = carOn_phoneOff;
 	}
 	else if (phone_on_pad)
 	{
+		LED_off;
 		state = carOn_phoneOn;
 	}
 	else if (voltage < voltage_limit_low)
 	{
+		LED_off;
 		state = carOff_phoneOff;
 	}
 }
@@ -275,7 +298,9 @@ void carOff_phoneOn()
 		state = carOn_phoneOn;
 	}
 
-	fast_blink(8);
+	fast_blink(30);
+
+	//LED_on;
 }
 void carOff_phoneOff()
 {
@@ -287,4 +312,8 @@ void carOff_phoneOff()
 	{
 		state = carOn_phoneOff;
 	}
+
+	//_delay_ms(500);
+	//LED_toggle;
+
 }
