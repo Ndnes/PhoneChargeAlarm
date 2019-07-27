@@ -52,6 +52,10 @@
 #define set_blink_done			(booleans |= (1<<1))
 #define clear_blink_done		(booleans &= ~(1<<1))
 
+#define fast_mode				(booleans & (1<<2))
+#define set_fast_mode			(booleans |= (1<<2))
+#define clear_fast_mode			(booleans &= ~(1<<2))
+#define toggle_fast_mode		(booleans ^= (1<<2))
 
 #define phone_off_pad		(PINB & (1<<PINB1))
 
@@ -110,7 +114,7 @@ void carOn_phoneOn();
 void carOff_phoneOn();
 void carOff_phoneOff();
 void slow_blink(uint8_t num_of_blinks);
-void fast_blink(uint8_t num_of_blinks);
+void fast_blink();
 
 
 
@@ -121,7 +125,7 @@ static volatile uint8_t cycle_timer = 0;
 
 //TODO: Move the following globals to a struct and pass to the "state functions"
 static volatile uint8_t ms_10_counter = 0; //counter is incremented every ~10ms
-static volatile uint8_t booleans = 0;
+static volatile uint8_t booleans = 0b00000100; //Fast mode on by default.
 
 uint16_t voltage = 0;
 uint8_t blink_cnt = 0;
@@ -202,15 +206,28 @@ void slow_blink(uint8_t num_of_blinks)
 	else
 	{
 		set_blink_done;
+		blink_cnt = 0;
 	}
 }
-void fast_blink(uint8_t num_of_blinks)
+void fast_blink()
 {
-	for (uint8_t i=0; i < num_of_blinks; i++)
+	if ((ms_10_counter % 100) == 0)
 	{
-		LED_toggle;
+		toggle_fast_mode;
 	}
-}//TODO: Finish this shit.
+	
+	if (fast_mode)
+	{
+		if ((ms_10_counter % 2) == 0)
+		{
+			LED_toggle;
+		}
+	}
+	else
+	{
+		LED_off;
+	}	
+}
 
 /*****************************************
 State functions
@@ -263,14 +280,16 @@ void carOff_phoneOn()
 {
 	if(phone_off_pad)
 	{
+		LED_off;
 		state = carOff_phoneOff;
 	}
 	else if (voltage > VOLTAGE_LIMIT_HIGH)
 	{
+		LED_off;
 		state = carOn_phoneOn;
 	}
 
-	fast_blink(30);
+	fast_blink();
 }
 void carOff_phoneOff()
 {
