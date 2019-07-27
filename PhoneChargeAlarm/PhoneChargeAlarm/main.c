@@ -2,7 +2,7 @@
  * PhoneChargeAlarm.c
  *
  * Created: 7/22/2019 11:32:47 AM
- * Author : Frakkmann Stasjonaer
+ * Author : Ndnes
  */ 
 
 
@@ -36,18 +36,19 @@
 #define ADC_value				ADCL
 
 #define LED_BRIGHTNESS			0x14					//The brightness of the LED from 0 to 255.
-#define VOLTAGE_LIMIT_HIGH		14600
-#define VOLTAGE_LIMIT_LOW		14300
-#define CYCLE_TIMER_TOP			156
+#define VOLTAGE_LIMIT_HIGH		14600	//mV
+#define VOLTAGE_LIMIT_LOW		14300	//mV
+#define CYCLE_TIMER_TOP			156		//Ensures top (155) is reached every 10ms if 
+										//timer is configured for 9 bit fast pwm mode.
 
 #define LED_on					TCCR0A |= (1<<COM0A1)	//The brightness of the LED is controlled with PWM so
 #define LED_off					TCCR0A &= ~(1<<COM0A1)	//the LED should be turned on and off by
-#define LED_toggle				TCCR0A ^= (1<<COM0A1)	//connecting/disconnecting OC0A to the port.
+#define LED_toggle				TCCR0A ^= (1<<COM0A1)	//connecting/disconnecting OC0A to the LED pin.
 
-#define counter_changed			(booleans & (1<<0))
-#define set_counter_changed		(booleans |= (1<<0))
-#define clear_counter_changed	(booleans &= ~(1<<0))
-
+#define counter_changed			(booleans & (1<<0))		//To save space all booleans are collected in 
+#define set_counter_changed		(booleans |= (1<<0))	//one global uint8_t variable. These macros
+#define clear_counter_changed	(booleans &= ~(1<<0))	//provides an interface to read and manipulate the
+														//bits associated with each bool.
 #define blink_done  			(booleans & (1<<1))
 #define set_blink_done			(booleans |= (1<<1))
 #define clear_blink_done		(booleans &= ~(1<<1))
@@ -81,18 +82,17 @@ void Set_pin_direction(void)
 }
 void ADC_init(void)
 {
-	ADMUX |= (1<<MUX1);		//Sets ADC input to PB2.
+	ADMUX |= (1<<MUX1);					//Sets ADC input to PB2.
 	
 	ADCSRA |= (1<<ADEN);				//Enable the ADC.
 	ADCSRA |= (1<<ADIE);				//ADC conversion complete interrupt request enable.
 	ADCSRA |= (1<<ADPS1) | (1<<ADPS0);	//Sets ADC prescaler to x8.
 
-	DIDR0 |= (1<<ADC2D);				//Disable digital input buffer for ADC pin to reduce pwr consumption.
+	DIDR0 |= (1<<ADC2D);				//Disable digital input buffer for ADC pin to reduce 
+										//power consumption.
 }
 void Timer_init(void)
 {
-	//TCCR0A |= (1<<COM0A1);			//Clear on compare match.***
-	
 	TCCR0A |= (1<<WGM01);			//-
 	TCCR0B |= (1<<WGM02);			//Sets up the timer for 9 bit fast PWM mode, top = 511.
 
@@ -107,7 +107,7 @@ void Timer_init(void)
 Function prototypes
 ****************************************/
 uint16_t get_voltage();
-void (*state)(); //Function pointer
+void (*state)();							//Function pointer
 void startup();
 void carOn_phoneOff();
 void carOn_phoneOn();
@@ -121,13 +121,13 @@ void fast_blink();
 /****************************************
 Global Variables
 ****************************************/
-static volatile uint8_t cycle_timer = 0;
+static volatile uint8_t cycle_timer = 0;	//Counter is incremented in timer TCNT0 overflow ISR
 
-//TODO: Move the following globals to a struct and pass to the "state functions"
+//TODO: REFACTOR Move variables to struct and pass to "state functions"
 static volatile uint8_t ms_10_counter = 0; //counter is incremented every ~10ms
 static volatile uint8_t booleans = 0b00000100; //Fast mode on by default.
 
-uint16_t voltage = 0;
+uint16_t voltage = 0;		//Car voltage in mV
 uint8_t blink_cnt = 0;
 
 
@@ -138,10 +138,10 @@ int main(void)
 	ADC_init();
 	Timer_init();
 
-	sei();
-	TCCR0B |= (1<<CS00);			//Turn on clock with no prescaling.
+	sei();						//Enable global interrupts.
+	TCCR0B |= (1<<CS00);		//Turn on clock with no prescaling.
 
-	state = startup;
+	state = startup;			//Initialize state
 
 	/*
 	typedef struct data
@@ -156,32 +156,30 @@ int main(void)
 
     while (1)
     {
-		
 		//Execute everything only once per ms_10_counter change. I.e every 10ms.
 		if (counter_changed)
 		{
-			
-			if (ms_10_counter > 249)
-			{
+			if (ms_10_counter > 249)	//Counter needs to be reset when reaching 250 to prevent 
+			{							//wrong timing on "overflow"
 				ms_10_counter = 0;
 			}
 			
-			if ((ms_10_counter % 50) == 1)
+			if ((ms_10_counter % 50) == 1)		//True every ~500ms Also true on first run.
 			{
-				SMCR |= (1<<SM0);	//Do an ADC conversion in ADC noise canceling mode every ~500ms
-				voltage = ADC_value * 64; //Voltage in mV.
-			}
+				SMCR |= (1<<SM0);	//Do an ADC conversion in ADC noise canceling mode. CPU is halted.
+				voltage = ADC_value * 64;	//Voltage in mV. Conversion gets the actual car voltage and
+			}								//not the voltage on the ADC pin.
 			
-			state();
-			clear_counter_changed;
-		}
+			state();					//Execute the current state function.
+			clear_counter_changed;		//Reset the counter_changed bool. It will be set in the
+		}								//'TIM0_OVF_vect' ISR.
 	}
 }
 
-ISR(TIM0_OVF_vect)
+ISR(TIM0_OVF_vect)			//TCNT0 overflow interrupt.
 {
 	cycle_timer ++;
-	if (cycle_timer > CYCLE_TIMER_TOP)
+	if (cycle_timer > CYCLE_TIMER_TOP)	//This should occur every 10ms
 	{
 		cycle_timer = 0;
 		ms_10_counter ++;
@@ -218,7 +216,7 @@ void fast_blink()
 	
 	if (fast_mode)
 	{
-		if ((ms_10_counter % 2) == 0)
+		if ((ms_10_counter % 10) == 0)
 		{
 			LED_toggle;
 		}
