@@ -242,11 +242,6 @@ void startup()
 		clear_blink_done;
 		state = carOn_phoneOn;
 	}
-	else if (voltage < VOLTAGE_LIMIT_LOW)
-	{
-		clear_blink_done;
-		state = carOff_phoneOff;
-	}
 	else if (!blink_done)
 	{
 		slow_blink(3);
