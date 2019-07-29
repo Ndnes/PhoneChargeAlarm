@@ -58,6 +58,12 @@
 #define clear_fast_mode			(booleans &= ~(1<<2))
 #define toggle_fast_mode		(booleans ^= (1<<2))
 
+#define alarm_active			(booleans & (1<<3))		//Alarm will become active after activation timer has elapsed.
+#define set_alarm_active		(booleans |= (1<<3))
+
+#define activation_timer		(booleans >> 4)			//Use the spare 4 high bits of the 'booleans' global variable as 
+#define incr_activation_timer   (booleans += 0b00010000)//an extra timer counter.
+
 #define phone_off_pad		(PINB & (1<<PINB1))
 
  /****************************************
@@ -162,6 +168,14 @@ int main(void)
 			if (ms_10_counter > 249)	//Counter needs to be reset when reaching 250 to prevent 
 			{							//wrong timing on "overflow"
 				ms_10_counter = 0;
+				if (!alarm_active)
+				{
+					incr_activation_timer;
+					if (activation_timer > 5)	//Will become true approx. 15 sec after startup.
+					{
+						set_alarm_active;
+					}
+				}
 			}
 			
 			if ((ms_10_counter % 50) == 1)		//True every ~500ms Also true on first run.
@@ -281,8 +295,10 @@ void carOff_phoneOn()
 		LED_off;
 		state = carOn_phoneOn;
 	}
-
-	fast_blink();
+	if (alarm_active)
+	{
+		fast_blink();
+	}
 }
 void carOff_phoneOff()
 {
