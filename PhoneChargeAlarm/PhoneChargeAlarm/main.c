@@ -295,7 +295,7 @@ void carOff_phoneOn()
 		LED_off;
 		state = carOn_phoneOn;
 	}
-	if (alarm_active)
+	if (alarm_active)	//'alarm_active' will be set high ~15 sec after power-on.
 	{
 		fast_blink();
 	}
