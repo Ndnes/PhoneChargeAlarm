@@ -35,11 +35,11 @@
 
 #define ADC_value				ADCL
 
-#define LED_BRIGHTNESS			0x14					//The brightness of the LED from 0 to 255.
+#define LED_BRIGHTNESS			0xff					//The brightness of the LED from 0 to 255.
 #define VOLTAGE_LIMIT_HIGH		14600	//mV
 #define VOLTAGE_LIMIT_LOW		14300	//mV
-#define CYCLE_TIMER_TOP			156		//Ensures top (155) is reached every 10ms if 
-										//timer is configured for 9 bit fast pwm mode.
+#define CYCLE_TIMER_TOP			19//156					//Ensures top (155) is reached every 10ms if 
+														//timer is configured for 9 bit fast pwm mode and F_CPU is 8MHz. For 1MHz f_cpu, top should be 20.
 
 #define LED_on					TCCR0A |= (1<<COM0A1)	//The brightness of the LED is controlled with PWM so
 #define LED_off					TCCR0A &= ~(1<<COM0A1)	//the LED should be turned on and off by
@@ -87,11 +87,10 @@ void Set_pin_direction(void)
 	PUEB |= (1<<PUEB1);		//Enable pull-up on PB1. (Pin 2 connected to IR switch)
 }
 void ADC_init(void)
-{
-	ADMUX |= (1<<MUX1);					//Sets ADC input to PB2.
-	
+{	
 	ADCSRA |= (1<<ADEN);				//Enable the ADC.
-	ADCSRA |= (1<<ADIE);				//ADC conversion complete interrupt request enable.
+	ADMUX |= (1<<MUX1);					//Sets ADC input to PB2.
+	//ADCSRA |= (1<<ADIE);				//ADC conversion complete interrupt request enable.
 	ADCSRA |= (1<<ADPS1) | (1<<ADPS0);	//Sets ADC prescaler to x8.
 
 	DIDR0 |= (1<<ADC2D);				//Disable digital input buffer for ADC pin to reduce 
@@ -167,23 +166,22 @@ int main(void)
 		{
 			if (ms_10_counter > 249)	//Counter needs to be reset when reaching 250 to prevent 
 			{							//wrong timing on "overflow"
-				ms_10_counter = 0;
-				if (!alarm_active)
-				{
-					incr_activation_timer;
-					if (activation_timer > 5)	//Will become true approx. 15 sec after startup.
-					{
-						set_alarm_active;
-					}
-				}
+				//ms_10_counter = 0; Testing letting ms_10_counter overflow.
+				set_alarm_active;
 			}
 			
 			if ((ms_10_counter % 50) == 1)		//True every ~500ms Also true on first run.
 			{
-				SMCR |= (1<<SM0);	//Do an ADC conversion in ADC noise canceling mode. CPU is halted.
-				voltage = ADC_value * 64;	//Voltage in mV. Conversion gets the actual car voltage and
-			}								//not the voltage on the ADC pin.
+				ADCSRA |= (1<<ADSC);	//Do an ADC conversion in Single Conversion mode.
+			}
 			
+			asm("nop");					//In testing there seems to been a timing issue with the following while loop,
+			asm("nop");					//it does not seem to properly register the ADSC bit for a couple of cycles. Hence the no operation instructions.
+
+			while (ADCSRA & (1<<ADSC)) {}
+
+			voltage = ADC_value * 64;	//Voltage in mV. Conversion gets the actual car voltage and
+
 			state();					//Execute the current state function.
 			clear_counter_changed;		//Reset the counter_changed bool. It will be set in the
 		}								//'TIM0_OVF_vect' ISR.
@@ -209,7 +207,7 @@ void slow_blink(uint8_t num_of_blinks)
 {
 	if (blink_cnt < (num_of_blinks * 2))
 	{
-		if ((ms_10_counter % 110) == 1)
+		if ((ms_10_counter % 64) == 1)
 		{
 			LED_toggle;
 			blink_cnt ++;
@@ -223,14 +221,18 @@ void slow_blink(uint8_t num_of_blinks)
 }
 void fast_blink()
 {
-	if ((ms_10_counter % 100) == 0)
+	if (ms_10_counter < 200)
 	{
-		toggle_fast_mode;
+		set_fast_mode;
+	}
+	else
+	{
+		clear_fast_mode;
 	}
 	
 	if (fast_mode)
 	{
-		if ((ms_10_counter % 10) == 0)
+		if ((ms_10_counter % 4) == 0)
 		{
 			LED_toggle;
 		}
@@ -258,7 +260,7 @@ void startup()
 	}
 	else if (!blink_done)
 	{
-		slow_blink(3);
+		slow_blink(6);
 	}
 }
 void carOn_phoneOff()
@@ -295,7 +297,7 @@ void carOff_phoneOn()
 		LED_off;
 		state = carOn_phoneOn;
 	}
-	if (alarm_active)	//'alarm_active' will be set high ~15 sec after power-on.
+	else if (alarm_active)	//'alarm_active' will be set high ~15 sec after power-on.
 	{
 		fast_blink();
 	}
