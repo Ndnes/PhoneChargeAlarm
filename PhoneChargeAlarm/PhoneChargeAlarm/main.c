@@ -251,11 +251,13 @@ void startup()
 	if (blink_done && phone_off_pad)
 	{
 		clear_blink_done;
+		LED_off;
 		state = carOn_phoneOff;
 	}
 	else if (!phone_off_pad)
 	{
 		clear_blink_done;
+		LED_off;
 		state = carOn_phoneOn;
 	}
 	else if (!blink_done)
