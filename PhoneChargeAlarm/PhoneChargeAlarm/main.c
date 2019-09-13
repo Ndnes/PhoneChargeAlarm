@@ -64,7 +64,7 @@
 #define activation_timer		(booleans >> 4)			//Use the spare 4 high bits of the 'booleans' global variable as 
 #define incr_activation_timer   (booleans += 0b00010000)//an extra timer counter.
 
-#define phone_off_pad		(PINB & (1<<PINB1))
+#define phone_off_pad		!(PINB & (1<<PINB1))
 
  /****************************************
  Library import
